@@ -1,0 +1,11 @@
+build/
+*.cf
+*.o
+*.vcd
+*.ghw
+*.wlf
+transcript
+work/
+__pycache__/
+*.pyc
+.DS_Store
