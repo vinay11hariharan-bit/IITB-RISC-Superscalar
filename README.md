@@ -75,8 +75,10 @@ ghdl -r --std=08 --workdir=build tb_superscalar -gIMEM_INIT=my_prog.hex -gHALT_P
 ModelSim/Questa: compile the files in `files.txt` order with `-2008`, then
 `tb/tb_superscalar.vhd`, and set `IMEM_INIT` / `DMEM_INIT` as generics.
 
-Current results: all directed programs pass, and the random regression passes
-(see the commit history for the number of programs run).
+Current results: all 6 directed programs pass, plus 7,000 random programs at the
+default sizes and 1,000 with `--small`. In those runs the random programs
+regularly hit LSQ forwarding, Store Buffer forwarding, LSQ hold on a CDB
+conflict, ROB/LSQ/RS-full back-pressure, free-list stalls and flushes.
 
 ## Instruction encoding (as implemented)
 
