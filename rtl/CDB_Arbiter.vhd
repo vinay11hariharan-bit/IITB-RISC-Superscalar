@@ -15,6 +15,8 @@ entity CDB_Arbiter is
         lsq_tag         : in  Reg_Tag;
         lsq_val         : in  Data_Bus;
         lsq_rob         : in  Rob_Tag;
+        lsq_flags       : in  std_logic_vector(1 downto 0);   -- used by the LMF flag load
+        lsq_mask        : in  std_logic_vector(1 downto 0);
         
         alu_req         : in  std_logic;
         alu_tag         : in  Reg_Tag;
@@ -48,7 +50,7 @@ end CDB_Arbiter;
 architecture Combinatorial of CDB_Arbiter is
 begin
     process(branch_req, branch_tag, branch_val, branch_rob, branch_act_pc,
-            lsq_req, lsq_tag, lsq_val, lsq_rob,
+            lsq_req, lsq_tag, lsq_val, lsq_rob, lsq_flags, lsq_mask,
             alu_req, alu_tag, alu_val, alu_rob, alu_flags, alu_mask)
         variable requests : std_logic_vector(2 downto 0);
     begin
@@ -63,22 +65,25 @@ begin
             when "001" => 
                 cdb1_valid <= '1'; cdb1_tag <= alu_tag; cdb1_val <= alu_val; cdb1_rob <= alu_rob; cdb1_flags <= alu_flags; cdb1_mask <= alu_mask;
             when "010" => 
-                cdb1_valid <= '1'; cdb1_tag <= lsq_tag; cdb1_val <= lsq_val; cdb1_rob <= lsq_rob;
+                cdb1_valid <= '1'; cdb1_tag <= lsq_tag; cdb1_val <= lsq_val; cdb1_rob <= lsq_rob; cdb1_flags <= lsq_flags; cdb1_mask <= lsq_mask;
             when "100" => 
                 cdb1_valid <= '1'; cdb1_tag <= branch_tag; cdb1_val <= branch_val; cdb1_rob <= branch_rob; cdb1_act_pc <= branch_act_pc;
             when "011" => 
-                cdb1_valid <= '1'; cdb1_tag <= lsq_tag; cdb1_val <= lsq_val; cdb1_rob <= lsq_rob;
+                cdb1_valid <= '1'; cdb1_tag <= lsq_tag; cdb1_val <= lsq_val; cdb1_rob <= lsq_rob; cdb1_flags <= lsq_flags; cdb1_mask <= lsq_mask;
                 cdb2_valid <= '1'; cdb2_tag <= alu_tag; cdb2_val <= alu_val; cdb2_rob <= alu_rob; cdb2_flags <= alu_flags; cdb2_mask <= alu_mask;
             when "101" => 
                 cdb1_valid <= '1'; cdb1_tag <= branch_tag; cdb1_val <= branch_val; cdb1_rob <= branch_rob; cdb1_act_pc <= branch_act_pc;
                 cdb2_valid <= '1'; cdb2_tag <= alu_tag; cdb2_val <= alu_val; cdb2_rob <= alu_rob; cdb2_flags <= alu_flags; cdb2_mask <= alu_mask;
             when "110" => 
                 cdb1_valid <= '1'; cdb1_tag <= branch_tag; cdb1_val <= branch_val; cdb1_rob <= branch_rob; cdb1_act_pc <= branch_act_pc;
-                cdb2_valid <= '1'; cdb2_tag <= lsq_tag; cdb2_val <= lsq_val; cdb2_rob <= lsq_rob;
+                cdb2_valid <= '1'; cdb2_tag <= lsq_tag; cdb2_val <= lsq_val; cdb2_rob <= lsq_rob; cdb2_flags <= lsq_flags; cdb2_mask <= lsq_mask;
             when "111" => 
+                -- All three want a bus: the LSQ waits.  The LSQ keeps its result and
+                -- issues nothing new while held.  (Holding the ALU here lost the
+                -- instruction the ALU RS issued in the same cycle.)
                 cdb1_valid <= '1'; cdb1_tag <= branch_tag; cdb1_val <= branch_val; cdb1_rob <= branch_rob; cdb1_act_pc <= branch_act_pc;
-                cdb2_valid <= '1'; cdb2_tag <= lsq_tag; cdb2_val <= lsq_val; cdb2_rob <= lsq_rob;
-                alu_hold <= '1';
+                cdb2_valid <= '1'; cdb2_tag <= alu_tag; cdb2_val <= alu_val; cdb2_rob <= alu_rob; cdb2_flags <= alu_flags; cdb2_mask <= alu_mask;
+                lsq_hold <= '1';
             when others => null;
         end case;
     end process;

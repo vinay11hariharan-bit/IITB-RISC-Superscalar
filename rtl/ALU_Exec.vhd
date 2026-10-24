@@ -7,6 +7,7 @@ entity ALU_Exec is
     Port (
         clk             : in  std_logic;
         rst             : in  std_logic;
+        flush           : in  std_logic;
         
         issue_valid     : in  std_logic;
         issue_opcode    : in  std_logic_vector(3 downto 0);
@@ -45,7 +46,7 @@ begin
         variable cf, zf  : std_logic;
     begin
         if rising_edge(clk) then
-            if rst = '1' then
+            if rst = '1' or flush = '1' then
                 req_internal <= '0';
             elsif hold = '1' and req_internal = '1' then
                 null; 
@@ -115,7 +116,7 @@ begin
                         end if;
 
                     elsif issue_opcode = "0001" then -- ADI
-                        r17 := resize(op1, 17) + resize(unsigned(signed(issue_imm)), 17); 
+                        r17 := resize(op1, 17) + resize(unsigned(resize(signed(issue_imm), 16)), 17); -- sign-extend imm first
                         alu_val <= std_logic_vector(r17(15 downto 0)); 
                         if r17(15 downto 0) = x"0000" then
                             alu_flags <= r17(16) & '1';

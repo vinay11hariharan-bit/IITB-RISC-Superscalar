@@ -7,6 +7,7 @@ entity Branch_Exec is
     Port (
         clk             : in  std_logic;
         rst             : in  std_logic;
+        flush           : in  std_logic;
         
         issue_valid     : in  std_logic;
         issue_opcode    : in  std_logic_vector(3 downto 0);
@@ -34,7 +35,7 @@ begin
         variable ext_imm  : unsigned(DATA_WIDTH-1 downto 0);
     begin
         if rising_edge(clk) then
-            if rst = '1' then
+            if rst = '1' or flush = '1' then
                 cdb_valid <= '0';
             else
                 cdb_valid <= issue_valid;

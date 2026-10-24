@@ -8,6 +8,16 @@ entity Branch_RS is
     Port (
         clk             : in  std_logic;
         rst             : in  std_logic;
+        flush           : in  std_logic;
+        rs_full         : out std_logic;   -- fewer than two free entries
+
+        -- second dispatch port (slot 2 of the bundle)
+        disp_en_b       : in  std_logic;
+        bundle_b        : in  Instr_Bundle;
+        disp_rob_tag_b  : in  Rob_Tag;
+        dest_tag_b      : in  Reg_Tag;
+        q1_b            : in  Reg_Tag; v1_val_b : in std_logic; v1_b : in Data_Bus;
+        q2_b            : in  Reg_Tag; v2_val_b : in std_logic; v2_b : in Data_Bus;
         
         disp_en         : in  std_logic;
         bundle          : in  Instr_Bundle;
@@ -49,11 +59,19 @@ architecture Behavioral of Branch_RS is
     type BRS_Array is array (0 to RS_DEPTH-1) of BRS_Entry;
     signal rs : BRS_Array;
 begin
+    process(rs)
+        variable n : integer;
+    begin
+        n := 0;
+        for i in 0 to RS_DEPTH-1 loop if rs(i).Busy = '0' then n := n + 1; end if; end loop;
+        if n < 2 then rs_full <= '1'; else rs_full <= '0'; end if;
+    end process;
+
     process(clk)
-        variable free_slot : integer;
+        variable free_slot, free_slot_b : integer;
     begin
         if rising_edge(clk) then
-            if rst = '1' then
+            if rst = '1' or flush = '1' then
                 for i in 0 to RS_DEPTH-1 loop rs(i).Busy <= '0'; end loop; 
                 issue_valid <= '0';
             else
@@ -86,9 +104,13 @@ begin
                     end if;
                 end loop;
 
-                -- 3. Dispatch
-                free_slot := -1;
-                for i in 0 to RS_DEPTH-1 loop if rs(i).Busy = '0' then free_slot := i; exit; end if; end loop;
+                -- 3. Dispatch (up to two per cycle)
+                free_slot := -1; free_slot_b := -1;
+                for i in 0 to RS_DEPTH-1 loop
+                    if rs(i).Busy = '0' then
+                        if free_slot = -1 then free_slot := i; elsif free_slot_b = -1 then free_slot_b := i; end if;
+                    end if;
+                end loop;
                 
                 if disp_en = '1' and bundle.Is_Control = '1' and free_slot /= -1 then
                     rs(free_slot).Busy <= '1';
@@ -98,6 +120,15 @@ begin
                     rs(free_slot).Q1 <= q1; rs(free_slot).V1_Valid <= v1_val; rs(free_slot).V1 <= v1;
                     rs(free_slot).Q2 <= q2; rs(free_slot).V2_Valid <= v2_val; rs(free_slot).V2 <= v2;
                     rs(free_slot).Q3 <= q3_ccr; rs(free_slot).V3_Valid <= v3_val; rs(free_slot).V3 <= v3_ccr;
+                end if;
+                if disp_en_b = '1' and bundle_b.Is_Control = '1' and free_slot_b /= -1 then
+                    rs(free_slot_b).Busy <= '1';
+                    rs(free_slot_b).Opcode <= bundle_b.Opcode;
+                    rs(free_slot_b).PC <= bundle_b.PC; rs(free_slot_b).Imm <= bundle_b.Imm;
+                    rs(free_slot_b).ROB_Tag <= disp_rob_tag_b; rs(free_slot_b).Dest_Tag <= dest_tag_b;
+                    rs(free_slot_b).Q1 <= q1_b; rs(free_slot_b).V1_Valid <= v1_val_b; rs(free_slot_b).V1 <= v1_b;
+                    rs(free_slot_b).Q2 <= q2_b; rs(free_slot_b).V2_Valid <= v2_val_b; rs(free_slot_b).V2 <= v2_b;
+                    rs(free_slot_b).Q3 <= q3_ccr; rs(free_slot_b).V3_Valid <= v3_val; rs(free_slot_b).V3 <= v3_ccr;
                 end if;
             end if;
         end if;

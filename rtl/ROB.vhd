@@ -54,6 +54,9 @@ entity ROB is
         commit_flags_2  : out std_logic_vector(1 downto 0);
         commit_mask_2   : out std_logic_vector(1 downto 0);
         
+        -- Store Buffer has room for two committed stores
+        sb_ready        : in  std_logic;
+
         flush_pipeline  : out std_logic;
         recovery_pc     : out Data_Bus;
         
@@ -95,6 +98,7 @@ begin
         variable n_head, n_tail, n_count : integer;
         variable cdb1_idx, cdb2_idx      : integer;
         variable v_flush                 : std_logic; -- THE FIX: Internal variable for flush state
+        variable store_ok                : boolean;
     begin
         if rising_edge(clk) then
             if rst = '1' then
@@ -107,9 +111,11 @@ begin
                 flush_pipeline <= '0'; commit_en_1 <= '0'; commit_en_2 <= '0'; 
                 bp_train_en <= '0'; 
                 v_flush := '0'; -- Reset flush tracking variable
+                store_ok := sb_ready = '1';
 
                 -- PROCESS THE HEAD OF THE ROB
-                if n_count > 0 and rob_table(n_head).Busy = '1' and rob_table(n_head).Valid = '1' then
+                if n_count > 0 and rob_table(n_head).Busy = '1' and rob_table(n_head).Valid = '1'
+                   and (store_ok or rob_table(n_head).Opcode /= OP_SW) then
                     
                     -- 1. BP Training 
                     if rob_table(n_head).Is_Control = '1' then
@@ -129,6 +135,15 @@ begin
                         flush_pipeline <= '1';
                         v_flush := '1'; -- Log the flush internally
                         recovery_pc    <= rob_table(n_head).Actual_PC;
+                        -- the control instruction itself still retires (JAL/JLR link register)
+                        commit_en_1      <= '1';
+                        commit_opcode_1  <= rob_table(n_head).Opcode;
+                        commit_rob_tag_1 <= n_head;
+                        commit_arf_1     <= rob_table(n_head).Dest_ARF;
+                        commit_rrf_1     <= rob_table(n_head).Dest_RRF;
+                        commit_val_1     <= rob_table(n_head).Value;
+                        commit_flags_1   <= rob_table(n_head).Flags;
+                        commit_mask_1    <= rob_table(n_head).Mask;
                         head <= 0; tail <= 0; count <= 0;
                         for i in 0 to ROB_DEPTH-1 loop rob_table(i).Busy <= '0'; end loop;
                         
@@ -146,7 +161,8 @@ begin
                         rob_table(n_head).Busy <= '0';
                         n_head := (n_head + 1) mod ROB_DEPTH; n_count := n_count - 1;
                         
-                        if n_count > 0 and rob_table(n_head).Busy = '1' and rob_table(n_head).Valid = '1' then
+                        if n_count > 0 and rob_table(n_head).Busy = '1' and rob_table(n_head).Valid = '1'
+                           and (store_ok or rob_table(n_head).Opcode /= OP_SW) then
                             if not (rob_table(n_head).Is_Control = '1' and rob_table(n_head).Actual_PC /= rob_table(n_head).Predicted_PC) then
                                 commit_en_2      <= '1';
                                 commit_opcode_2  <= rob_table(n_head).Opcode;
@@ -192,7 +208,7 @@ begin
                         rob_table(n_tail).Instr_PC <= bundle_1.PC; 
                         rob_table(n_tail).Dest_ARF <= bundle_1.Dest_ARF;
                         rob_table(n_tail).Dest_RRF <= dest_tag_1; 
-                        rob_table(n_tail).Predicted_PC <= std_logic_vector(unsigned(bundle_1.PC) + to_unsigned(2, DATA_WIDTH));
+                        rob_table(n_tail).Predicted_PC <= bundle_1.Pred_PC;
                         rob_table(n_tail).Is_Control <= bundle_1.Is_Control; 
                         rob_table(n_tail).Is_Micro_Op <= is_micro_op_1;
                         rob_table(n_tail).Flags <= "00"; 
@@ -206,7 +222,7 @@ begin
                             rob_table(n_tail).Instr_PC <= bundle_2.PC; 
                             rob_table(n_tail).Dest_ARF <= bundle_2.Dest_ARF;
                             rob_table(n_tail).Dest_RRF <= dest_tag_2; 
-                            rob_table(n_tail).Predicted_PC <= std_logic_vector(unsigned(bundle_2.PC) + to_unsigned(2, DATA_WIDTH));
+                            rob_table(n_tail).Predicted_PC <= bundle_2.Pred_PC;
                             rob_table(n_tail).Is_Control <= bundle_2.Is_Control; 
                             rob_table(n_tail).Is_Micro_Op <= is_micro_op_2;
                             rob_table(n_tail).Flags <= "00"; 

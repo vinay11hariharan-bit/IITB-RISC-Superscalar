@@ -7,6 +7,8 @@ entity ALU_RS is
     generic ( RS_DEPTH : integer := 8 );
     Port ( 
         clk, rst, exec_stall, disp_en_1, disp_en_2 : in std_logic;
+        flush : in std_logic;
+        rs_full : out std_logic;   -- fewer than two free entries
         bundle_1, bundle_2 : in Instr_Bundle; 
         rob_tag_1, rob_tag_2 : in Rob_Tag;
         dest_tag_1, dest_tag_2 : in Reg_Tag;
@@ -49,11 +51,19 @@ architecture Behavioral of ALU_RS is
     type RS_Array is array(0 to RS_DEPTH-1) of RS_Entry; 
     signal rs : RS_Array;
 begin
+    process(rs)
+        variable n : integer;
+    begin
+        n := 0;
+        for i in 0 to RS_DEPTH-1 loop if rs(i).Busy = '0' then n := n + 1; end if; end loop;
+        if n < 2 then rs_full <= '1'; else rs_full <= '0'; end if;
+    end process;
+
     process(clk) 
         variable f1, f2 : integer; 
     begin
         if rising_edge(clk) then
-            if rst='1' then 
+            if rst='1' or flush='1' then 
                 for i in 0 to RS_DEPTH-1 loop rs(i).Busy<='0'; end loop; 
                 issue_v<='0'; 
             else

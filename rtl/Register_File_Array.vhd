@@ -48,10 +48,16 @@ architecture Behavioral of Register_File_Array is
     signal rrf_data : RRF_Data_Array;
     signal rrf_valid : std_logic_vector(15 downto 0);
     
-    -- Helper procedure to route standard operand reads
+    -- Helper procedure to route standard operand reads.
+    -- A value broadcast on the CDB in this same cycle is bypassed in, otherwise
+    -- an RS entry dispatched now would wait for a broadcast that already passed.
+    -- 'fresh' marks a tag being allocated by slot 1 of this bundle: its RRF
+    -- valid bit still belongs to the previous owner and must not be trusted.
     procedure read_operand(
         arf_tag: in Arf_Tag; rrf_tag: in Reg_Tag; rat_busy: in std_logic; instr_pc: in Data_Bus;
         arf_mem: in ARF_Array; rrf_mem: in RRF_Data_Array; rrf_v_flag: in std_logic_vector(15 downto 0);
+        c1v: in std_logic; c1t: in Reg_Tag; c1d: in Data_Bus; c2v: in std_logic; c2t: in Reg_Tag; c2d: in Data_Bus;
+        fresh: in boolean;
         v_val_out: out std_logic; v_out: out Data_Bus
     ) is
     begin
@@ -59,12 +65,16 @@ architecture Behavioral of Register_File_Array is
             v_val_out:='1'; v_out:=instr_pc;
         elsif rat_busy='0' then 
             v_val_out:='1'; v_out:=arf_mem(to_integer(unsigned(arf_tag)));
-        else
-            if rrf_v_flag(to_integer(unsigned(rrf_tag)))='1' then 
-                v_val_out:='1'; v_out:=rrf_mem(to_integer(unsigned(rrf_tag)));
-            else 
-                v_val_out:='0'; v_out:=(others=>'0'); 
-            end if;
+        elsif fresh then
+            v_val_out:='0'; v_out:=(others=>'0');
+        elsif rrf_v_flag(to_integer(unsigned(rrf_tag)))='1' then 
+            v_val_out:='1'; v_out:=rrf_mem(to_integer(unsigned(rrf_tag)));
+        elsif c1v='1' and c1t=rrf_tag then
+            v_val_out:='1'; v_out:=c1d;
+        elsif c2v='1' and c2t=rrf_tag then
+            v_val_out:='1'; v_out:=c2d;
+        else 
+            v_val_out:='0'; v_out:=(others=>'0'); 
         end if;
     end procedure;
     
@@ -72,16 +82,21 @@ begin
     -- Combinatorial Reads
     process(pc_1, src1_arf_1, src1_rrf_1, src1_busy_1, src2_arf_1, src2_rrf_1, src2_busy_1, src3_arf_1, src3_rrf_1, src3_busy_1,
             pc_2, src1_arf_2, src1_rrf_2, src1_busy_2, src2_arf_2, src2_rrf_2, src2_busy_2, src3_arf_2, src3_rrf_2, src3_busy_2, 
-            arf_data, rrf_data, rrf_valid)
+            arf_data, rrf_data, rrf_valid, cdb_valid_1, cdb_tag_1, cdb_val_1, cdb_valid_2, cdb_tag_2, cdb_val_2,
+            alloc_en_1, dest_rrf_1)
         variable val1_1, val2_1, val3_1, val1_2, val2_2, val3_2 : std_logic; 
         variable v1_1_var, v2_1_var, v3_1_var, v1_2_var, v2_2_var, v3_2_var : Data_Bus;
+        variable f1, f2, f3 : boolean;
     begin
-        read_operand(src1_arf_1, src1_rrf_1, src1_busy_1, pc_1, arf_data, rrf_data, rrf_valid, val1_1, v1_1_var);
-        read_operand(src2_arf_1, src2_rrf_1, src2_busy_1, pc_1, arf_data, rrf_data, rrf_valid, val2_1, v2_1_var);
-        read_operand(src3_arf_1, src3_rrf_1, src3_busy_1, pc_1, arf_data, rrf_data, rrf_valid, val3_1, v3_1_var);
-        read_operand(src1_arf_2, src1_rrf_2, src1_busy_2, pc_2, arf_data, rrf_data, rrf_valid, val1_2, v1_2_var);
-        read_operand(src2_arf_2, src2_rrf_2, src2_busy_2, pc_2, arf_data, rrf_data, rrf_valid, val2_2, v2_2_var);
-        read_operand(src3_arf_2, src3_rrf_2, src3_busy_2, pc_2, arf_data, rrf_data, rrf_valid, val3_2, v3_2_var);
+        read_operand(src1_arf_1, src1_rrf_1, src1_busy_1, pc_1, arf_data, rrf_data, rrf_valid, cdb_valid_1, cdb_tag_1, cdb_val_1, cdb_valid_2, cdb_tag_2, cdb_val_2, false, val1_1, v1_1_var);
+        read_operand(src2_arf_1, src2_rrf_1, src2_busy_1, pc_1, arf_data, rrf_data, rrf_valid, cdb_valid_1, cdb_tag_1, cdb_val_1, cdb_valid_2, cdb_tag_2, cdb_val_2, false, val2_1, v2_1_var);
+        read_operand(src3_arf_1, src3_rrf_1, src3_busy_1, pc_1, arf_data, rrf_data, rrf_valid, cdb_valid_1, cdb_tag_1, cdb_val_1, cdb_valid_2, cdb_tag_2, cdb_val_2, false, val3_1, v3_1_var);
+        f1 := alloc_en_1='1' and dest_rrf_1/="0000" and src1_rrf_2=dest_rrf_1;
+        f2 := alloc_en_1='1' and dest_rrf_1/="0000" and src2_rrf_2=dest_rrf_1;
+        f3 := alloc_en_1='1' and dest_rrf_1/="0000" and src3_rrf_2=dest_rrf_1;
+        read_operand(src1_arf_2, src1_rrf_2, src1_busy_2, pc_2, arf_data, rrf_data, rrf_valid, cdb_valid_1, cdb_tag_1, cdb_val_1, cdb_valid_2, cdb_tag_2, cdb_val_2, f1, val1_2, v1_2_var);
+        read_operand(src2_arf_2, src2_rrf_2, src2_busy_2, pc_2, arf_data, rrf_data, rrf_valid, cdb_valid_1, cdb_tag_1, cdb_val_1, cdb_valid_2, cdb_tag_2, cdb_val_2, f2, val2_2, v2_2_var);
+        read_operand(src3_arf_2, src3_rrf_2, src3_busy_2, pc_2, arf_data, rrf_data, rrf_valid, cdb_valid_1, cdb_tag_1, cdb_val_1, cdb_valid_2, cdb_tag_2, cdb_val_2, f3, val3_2, v3_2_var);
         
         v1_val_1<=val1_1; v1_1<=v1_1_var; v2_val_1<=val2_1; v2_1<=v2_1_var; v3_val_1<=val3_1; v3_1<=v3_1_var;
         v1_val_2<=val1_2; v1_2<=v1_2_var; v2_val_2<=val2_2; v2_2<=v2_2_var; v3_val_2<=val3_2; v3_2<=v3_2_var;
@@ -95,11 +110,7 @@ begin
                 for i in 0 to 7 loop arf_data(i)<=(others=>'0'); end loop;
                 for i in 0 to 15 loop rrf_data(i)<=(others=>'0'); rrf_valid(i)<='0'; end loop;
             else
-                -- 1. Allocate New Destinations (invalidate them until CDB writes back)
-                if alloc_en_1='1' then rrf_valid(to_integer(unsigned(dest_rrf_1)))<='0'; end if;
-                if alloc_en_2='1' then rrf_valid(to_integer(unsigned(dest_rrf_2)))<='0'; end if;
-                
-                -- 2. CDB Snooping (Execution finished)
+                -- 1. CDB Snooping (Execution finished)
                 if cdb_valid_1='1' then 
                     rrf_valid(to_integer(unsigned(cdb_tag_1)))<='1'; 
                     rrf_data(to_integer(unsigned(cdb_tag_1)))<=cdb_val_1; 
@@ -108,6 +119,11 @@ begin
                     rrf_valid(to_integer(unsigned(cdb_tag_2)))<='1'; 
                     rrf_data(to_integer(unsigned(cdb_tag_2)))<=cdb_val_2; 
                 end if;
+
+                -- 2. Allocate New Destinations (invalidate them until CDB writes back).
+                --    Done after the CDB write so a newly allocated tag always starts invalid.
+                if alloc_en_1='1' then rrf_valid(to_integer(unsigned(dest_rrf_1)))<='0'; end if;
+                if alloc_en_2='1' then rrf_valid(to_integer(unsigned(dest_rrf_2)))<='0'; end if;
                 
                 -- 3. ROB Commit (Make changes permanent)
                 if commit_en_1='1' and commit_arf_1/="000" then 
