@@ -44,7 +44,16 @@ architecture Behavioral of Store_Buffer is
     signal head, tail : integer range 0 to BUFFER_DEPTH-1 := 0;
     signal count : integer range 0 to BUFFER_DEPTH := 0;
 begin
-    sb_ready <= '1' when count <= BUFFER_DEPTH-2 else '0';
+    -- The ROB samples sb_ready one cycle before the stores it commits arrive here,
+    -- so the stores arriving this cycle are counted as already present.
+    process(count, push_1, push_2)
+        variable n : integer;
+    begin
+        n := count;
+        if push_1 = '1' then n := n + 1; end if;
+        if push_2 = '1' then n := n + 1; end if;
+        if n <= BUFFER_DEPTH-2 then sb_ready <= '1'; else sb_ready <= '0'; end if;
+    end process;
     sb_empty <= '1' when count = 0 else '0';
 
     -- drain the oldest store every cycle

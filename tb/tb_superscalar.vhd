@@ -14,6 +14,7 @@
 --   HALT_PC                byte address of the HALT instruction
 --   MAX_CYCLES             give up after this many cycles (deadlock check)
 --   TRACE                  print every commit and DMEM write
+--   LSQ_DEPTH / SB_DEPTH   queue sizes (small values stress back-pressure)
 -- =====================================================================
 library IEEE; use IEEE.STD_LOGIC_1164.ALL; use IEEE.NUMERIC_STD.ALL;
 use work.RISC_Types_Pkg.ALL;
@@ -25,7 +26,9 @@ entity tb_superscalar is
         DMEM_INIT  : string  := "";
         HALT_PC    : integer := -1;
         MAX_CYCLES : integer := 5000;
-        TRACE      : boolean := false
+        TRACE      : boolean := false;
+        LSQ_DEPTH  : integer := 8;
+        SB_DEPTH   : integer := 8
     );
 end;
 
@@ -42,7 +45,7 @@ begin
     clk <= not clk after 5 ns when not done;
 
     dut: entity work.iitb_risc_superscalar
-        generic map (IMEM_INIT => IMEM_INIT, DMEM_INIT => DMEM_INIT)
+        generic map (IMEM_INIT => IMEM_INIT, DMEM_INIT => DMEM_INIT, LSQ_DEPTH => LSQ_DEPTH, SB_DEPTH => SB_DEPTH)
         port map (clk => clk, rst => rst,
                   dbg_imem_pc => ipc, dbg_imem_instr => iins, dbg_flush_pipeline => fl, dbg_rob_full => rf,
                   dbg_commit_en_1 => c1, dbg_commit_arf_1 => a1, dbg_commit_val_1 => v1,

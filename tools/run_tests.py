@@ -4,6 +4,7 @@
   python3 tools/run_tests.py                 # directed tests + 200 random programs
   python3 tools/run_tests.py --random 1000   # more random programs
   python3 tools/run_tests.py programs/lsu_basic.asm --trace
+  python3 tools/run_tests.py --small         # tiny LSQ / Store Buffer (back-pressure stress)
 
 Each program is assembled, run on the RTL (tb/tb_superscalar.vhd) and on the
 ISA model (tools/iss.py). The final R1-R7, C/Z flags and the whole data memory
@@ -50,13 +51,14 @@ def read_dmem(path):
     return words
 
 
-def run_rtl(hex_path, dmem_path, halt_pc, trace=False, max_cycles=20000):
+def run_rtl(hex_path, dmem_path, halt_pc, trace=False, max_cycles=20000, extra=()):
     cmd = GHDL + ['-r'] + STD + ['tb_superscalar', f'-gIMEM_INIT={hex_path}', f'-gHALT_PC={halt_pc}',
                                  f'-gMAX_CYCLES={max_cycles}', '--ieee-asserts=disable']
     if dmem_path:
         cmd.append(f'-gDMEM_INIT={dmem_path}')
     if trace:
         cmd.append('-gTRACE=true')
+    cmd += list(extra)
     out = subprocess.run(cmd, cwd=BUILD, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True).stdout
     st = {'regs': [0] * 8, 'mem': {}, 'halted': False, 'C': None, 'Z': None, 'cycles': None, 'log': out}
     for line in out.splitlines():
@@ -93,7 +95,7 @@ def compare(rtl, ref):
     return errs
 
 
-def run_one(name, src, dmem_words, trace=False, verbose=False):
+def run_one(name, src, dmem_words, trace=False, verbose=False, extra=()):
     words, halt_pc, _ = asm.assemble(src)
     if halt_pc is None:
         raise ValueError(f'{name}: program has no HALT')
@@ -108,7 +110,7 @@ def run_one(name, src, dmem_words, trace=False, verbose=False):
             f.writelines(f'{w:04X}\n' for w in dmem_words)
     # without a data file DMEM keeps its built-in contents (rtl/DMEM.vhd: word i = i for i < 8)
     ref = iss.run([w for w, _ in words], dmem_words if dmem_words else list(range(8)))
-    rtl = run_rtl(hex_path, dmem_path, halt_pc, trace)
+    rtl = run_rtl(hex_path, dmem_path, halt_pc, trace, extra=extra)
     errs = compare(rtl, ref)
     if trace or (errs and verbose):
         print('\n'.join(l for l in rtl['log'].splitlines() if 'report' in l))
@@ -122,17 +124,20 @@ def main():
     ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--trace', action='store_true')
     ap.add_argument('--no-build', action='store_true')
+    ap.add_argument('--small', action='store_true',
+                    help='run with a 4-entry LSQ and 2-entry Store Buffer to stress back-pressure')
     a = ap.parse_args()
 
     if not a.no_build:
         build()
+    extra = ['-gLSQ_DEPTH=4', '-gSB_DEPTH=2'] if a.small else []
 
     progs = a.programs or sorted(glob.glob(os.path.join(ROOT, 'programs', '*.asm')))
     failed = 0
     for p in progs:
         name = os.path.splitext(os.path.basename(p))[0]
         errs, rtl, ref = run_one(name, open(p).read(), read_dmem(os.path.splitext(p)[0] + '.dmem'),
-                                 trace=a.trace, verbose=True)
+                                 trace=a.trace, verbose=True, extra=extra)
         status = 'PASS' if not errs else 'FAIL'
         print(f'{status}  {name:24s} {ref["steps"]:4d} instr  {rtl["cycles"]} cycles')
         for e in errs:
@@ -146,7 +151,7 @@ def main():
         rnd_run += 1
         seed = a.seed + i
         src, dmem = randprog.generate(seed)
-        errs, rtl, ref = run_one(f'rand_{seed}', src, dmem)
+        errs, rtl, ref = run_one(f'rand_{seed}', src, dmem, extra=extra)
         if errs:
             rnd_fail += 1
             print(f'FAIL  random seed {seed}: ' + '; '.join(errs[:4]))

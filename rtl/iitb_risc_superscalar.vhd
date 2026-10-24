@@ -6,7 +6,9 @@ use work.RISC_Types_Pkg.ALL;
 entity iitb_risc_superscalar is
     generic (
         IMEM_INIT : string := "";   -- optional program hex file (empty = built-in program in IMEM.vhd)
-        DMEM_INIT : string := ""    -- optional data hex file    (empty = built-in contents in DMEM.vhd)
+        DMEM_INIT : string := "";   -- optional data hex file    (empty = built-in contents in DMEM.vhd)
+        LSQ_DEPTH : integer := 8;   -- load/store queue entries
+        SB_DEPTH  : integer := 8    -- store buffer entries
     );
     Port (
         clk : in std_logic;
@@ -196,7 +198,7 @@ begin
     -- ------------------------------------------------------------------
     -- Load/Store unit: LSQ -> (commit) -> Store Buffer -> DMEM
     -- ------------------------------------------------------------------
-    Inst_LSQ: entity work.LSQ port map (
+    Inst_LSQ: entity work.LSQ generic map ( LSQ_DEPTH => LSQ_DEPTH ) port map (
         clk => clk, rst => rst, flush => flush_pipeline,
         disp_en_1 => lsq_en_1, bundle_1 => rr_b_1, rob_tag_1 => rob_tag_1, dest_tag_1 => rr_dest_1,
         q_base_1 => rr_q1_1, v_base_val_1 => v1_val_1, v_base_1 => v1_1,
@@ -216,7 +218,7 @@ begin
         lsq_hold => lsq_hold, lsq_wb_valid => lsq_req, lsq_wb_val => lsq_val, lsq_wb_dest_tag => lsq_tag,
         lsq_wb_rob_tag => lsq_rob, lsq_wb_flags => lsq_flags, lsq_wb_mask => lsq_mask );
 
-    Inst_Store_Buffer: entity work.Store_Buffer port map (
+    Inst_Store_Buffer: entity work.Store_Buffer generic map ( BUFFER_DEPTH => SB_DEPTH ) port map (
         clk => clk, rst => rst,
         push_1 => sb_push_1, addr_1 => sb_addr_1, data_1 => sb_data_1,
         push_2 => sb_push_2, addr_2 => sb_addr_2, data_2 => sb_data_2,

@@ -3,7 +3,7 @@ GHDL   ?= ghdl
 FLAGS  := --std=08 --workdir=build
 SRCS   := $(shell cat files.txt) tb/tb_superscalar.vhd
 
-.PHONY: build test random clean
+.PHONY: build test random small clean
 
 build:
 	@mkdir -p build
@@ -15,6 +15,9 @@ test:
 
 random:
 	python3 tools/run_tests.py --random 2000
+
+small:
+	python3 tools/run_tests.py --small --random 500
 
 clean:
 	rm -rf build
