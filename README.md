@@ -82,9 +82,9 @@ Current results: all directed programs pass, and the random regression passes
 
 | Instruction | Encoding | Operation |
 |---|---|---|
-| ADA ADC ADZ AWC / ACA ACC ACZ ACW | `0000 rd ra rb C cz` | rd = ra + (C ? ~rb : rb) [+ carry for AWC/ACW]; cz=10 if C, 01 if Z |
+| ADA ADC ADZ AWC / ACA ACC ACZ ACW | `0000 rd ra rb n cz` | rd = ra + (n ? ~rb : rb), plus carry for AWC/ACW; cz = 10: only if C, 01: only if Z |
 | ADI | `0001 rd ra imm6` | rd = ra + SE(imm6) |
-| NDU NDC NDZ / NCU NCC NCZ | `0010 rd ra rb C cz` | rd = ~(ra & (C ? ~rb : rb)) |
+| NDU NDC NDZ / NCU NCC NCZ | `0010 rd ra rb n cz` | rd = ~(ra & (n ? ~rb : rb)); same cz conditions |
 | LLI | `0011 rd imm9` | rd = ZE(imm9) |
 | LW | `0100 rd rb imm6` | rd = M[rb + SE(imm6)] |
 | SW | `0101 rs rb imm6` | M[rb + SE(imm6)] = rs |
@@ -95,13 +95,15 @@ Current results: all directed programs pass, and the random regression passes
 | JLR | `1101 ra rb 000000` | ra = PC+2; PC = rb |
 | JRI | `1111 ra imm9` | PC = ra + 2*SE(imm9) |
 
-R0 reads as the PC of the instruction and writes to it are discarded.
+`n` is the complement bit (ACx / NCx forms). R0 reads as the PC of the instruction and writes to it are discarded.
 ADD/ADI write C and Z, NAND writes Z, LW/LLI write no flags. `HALT` in the
 assembler is `JAL R0, 0`.
 
 A few points differ from the report's tables. The RTL is the reference here:
 ADD is `0000` and ADI is `0001` (the report lists them the other way round),
-and BLE is `1010` (the report says `1011`).
+and BLE is `1010` (the report says `1011`). The destination of R-type
+instructions and ADI is in bits 11:9, as in the report's examples
+(`ADD R1, R2, R3` writes R1).
 
 ## Changes since the report
 
